@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>js订阅</title>
+</head>
+
+<body>
+<script>
+var Subscribe = Subscribe || {};
+
+/**
+ * [缓存]
+ * {
+ *     订阅ID ： {
+ *         success : [],成功的回调方法列表
+ *         error : [],失败的回调方法列表
+ *         data : {},回调方法的数据
+ *         status : 当前状态,见 Subscribe.types
+ *     }
+ * }
+ * @type {Object}
+ */
+Subscribe.cache = {};
+Subscribe.types = {
+    success : 'success',
+    error : 'error'
+}
+Subscribe.isFunction = function(func) {
+    return typeof func === 'function';
+}
+Subscribe.isName = function(name) {
+    return typeof name === 'string' && name.length;
+}
+Subscribe.isObj = function(obj) {
+    return Object.prototype.toString.call(obj).slice(8,-1) === 'Object'
+}
+
+/**
+ * [创建主题]
+ * @param {[string]} name [主题名称也是唯一id]
+ */
+Subscribe.add = function(name) {
+    var cache = Subscribe.cache;
+    //没有当前主题才创建
+    if (!cache[name]) {
+        cache[name] = Subscribe.createCache();
+    }
+}
+
+/**
+ * [执行主题回调]
+ * @param  {[string]} name [主题名称]
+ * @param  {[string]} type [执行的回调类型]
+ * @return {[undefined]}
+ */
+Subscribe.fire = function(name,type) {
+    var cache = Subscribe.cache[name],
+        data,
+        handleList,
+        handle,
+        i = 0,
+        caller = Subscribe.fire.caller;
+    //只允许Subscribe.pubPtHandle 或 Subscribe.subPtHandle 调用
+    if (!caller || !(caller === Subscribe.pubPtHandle || caller === Subscribe.subPtHandle) || !cache) return;
+    data = cache.data;
+    type = Subscribe.types[type];
+    if (type) {
+        handleList = cache[type];
+        while (handle = handleList[i++]) {
+            handle(data);
+        }
+    }
+}
+
+/**
+ * [生成缓存]
+ * @return {[object]}      [返回缓存对象]
+ */
+Subscribe.createCache = function() {
+    var obj = {
+        success : [],
+        error : [],
+        data : {},
+        status : ''
+    }
+    return obj;
+}
+
+/**
+ * [改变回调参数数据]
+ * @param {[string]} name [主题名称]
+ * @param {[object]} data [回调数据]
+ */
+Subscribe.setData = function(name,data) {
+    var cache = Subscribe.cache[name],
+        cacheData;
+    if (Subscribe.isObj(data) && cache) {
+        cacheData = cache.data;
+        for (var i in data) {
+            cacheData[i] = data[i];
+        }
+    }
+}
+
+/**
+ * [订阅主题原型的处理方法，包括成功或失败]
+ * @param  {[string]} name   [主题名称]
+ * @param  {[string]} type   [处理类型 'success' 或 'errir']
+ * @param  {[function]} handle [添加到缓存的处理方法]
+ * @return {[undefined]}
+ */
+Subscribe.subPtHandle = function(name,type,handle) {
+    var cache,
+        callHandle;
+    if (Subscribe.isName(name) && Subscribe.types[type]) {
+        cache = Subscribe.cache[name];
+        Subscribe.isFunction(handle) && cache[type].push(handle);
+        cache.status === type && Subscribe.fire(name,type);
+    }
+};
+
+/**
+ * [发布主题原型的处理方法，包括成功或失败]
+ * @param  {[string]} name   [主题名称]
+ * @param  {[string]} type   [处理类型 'success' 或 'errir']
+ * @param  {[function]} data [添加到缓存回调数据]
+ * @return {[undefined]}
+ */
+Subscribe.pubPtHandle = function(name,type,data) {
+    var cache,
+        hasHandle;
+    if (Subscribe.isName(name) && Subscribe.types[type]) {
+        cache = Subscribe.cache[name],
+        hasHandle = cache[type].length;
+        cache.status = type;
+        Subscribe.setData(name,data);
+        if (hasHandle) {
+            Subscribe.fire(name,type);
+        }
+    }
+};
+
+/**
+ * [订阅主题原型]
+ * @param  {[string]} name [主题名称]
+ * @return {[object]}      [订阅主题原型]
+ */
+Subscribe.subPt = function(name) {
+    this.name = name;
+};
+Subscribe.subPt.prototype = {
+    name : null,
+
+    /**
+     * [添加发布成功回调]
+     * @param  {[function]} handle [发布成功回调]
+     * @return {[object]}        [当前对象]
+     */
+    success : function(handle) {
+        Subscribe.subPtHandle(this.name,'success',handle);
+        return this;
+    },
+
+    /**
+     * [添加发布失败回调]
+     * @param  {[function]} handle [发布失败回调]
+     * @return {[object]}        [当前对象]
+     */
+    error : function(handle) {
+        Subscribe.subPtHandle(this.name,'error',handle);
+        return this;
+    }
+};
+
+/**
+ * [发布主题原型]
+ * @param  {[string]} name [主题名称]
+ * @return {[object]}      [发布主题原型]
+ */
+Subscribe.pubPt = function(name) {
+    this.name = name;
+};
+Subscribe.pubPt.prototype = {
+    name : null,
+
+    /**
+     * [发布成功]
+     * @param  {[object]} handle [回调数据]
+     * @return {[object]}        [当前对象]
+     */
+    success : function(data) {
+        Subscribe.pubPtHandle(this.name,'success',data);
+        return this;
+    },
+
+    /**
+     * [发布失败]
+     * @param  {[object]} handle [回调数据]
+     * @return {[object]}        [当前对象]
+     */
+    error : function(data) {
+        Subscribe.pubPtHandle(this.name,'error',data);
+        return this;
+    }
+}
+
+/**
+ * [订阅]
+ * @param  {[string]} name [主题名称]
+ * @return {[object]}      [订阅功能对象]
+ */
+Subscribe.sub = function(name) {
+    if (!Subscribe.isName(name)) return;
+    Subscribe.add(name);
+    return new Subscribe.subPt(name);
+}
+
+/**
+ * [发布]
+ * @param  {[string]} name [主题名称]
+ * @return {[object]}      [发布功能对象]
+ */
+Subscribe.pub = function(name) {
+    if (!Subscribe.isName(name)) return;
+    Subscribe.add(name);
+    return new Subscribe.pubPt(name);
+}
+
+/**
+ * [取消订阅]
+ * @param  {[string]} name [主题名称]
+ * @return {[object]}      [顶级对象Subscribe]
+ */
+Subscribe.unSub = function(name) {
+    var cache;
+    if (!Subscribe.isName(name)) return;
+    cache = Subscribe.cache;
+    if (cache && cache[name]) {
+        delete cache[name];
+    }
+    return Subscribe;
+}
+
+/**
+ * [将Subscribe功能绑定到其他对象上]
+ * @param  {[object]} obj [绑定到的对象]
+ * @return {[object]}      [顶级对象Subscribe]
+ */
+Subscribe.define = function(obj) {
+    var methods = ['sub','pub','unSub'],
+        method,
+        i = 0;
+    if (!Subscribe.isObj(obj)) {
+        obj = window;
+    }
+    while (method = methods[i++]) {
+        obj[method] = Subscribe[method];
+    }
+    return Subscribe;
+}
+
+Subscribe.sub('test')
+    .success(function(data){
+        console.log(data);
+    })
+    .error(function(){
+        console.log('error');
+    });
+//Subscribe.unSub('test');//取消订阅
+var nPub = Subscribe.pub('test');
+nPub
+    .success({a:1})
+    .success({b:2})
+    .error();
+
+var $ = {};
+Subscribe.define($);
+$.sub('test2')
+    .success(function(data){
+        console.log(data);
+    })
+    .error(function(){
+        console.log('error');
+    });
+
+$.pub('test2')
+    .success({a:1})
+    .success({b:2})
+    .error();
+</script>
+</body>
+</html>
